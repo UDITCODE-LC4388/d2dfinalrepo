@@ -1,9 +1,11 @@
 import logging
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from analyzer.git_analyzer import RepoAnalysisError, analyze_repo
+from analyzer.response_mapper import map_to_frontend
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +25,10 @@ app.add_middleware(
 )
 
 
+class AnalyzeRequest(BaseModel):
+    url: str = Field(..., description="Git repository URL")
+
+
 @app.get("/")
 def home():
     return {"message": "Repo Health Intelligence API Running"}
@@ -34,11 +40,10 @@ def health():
 
 
 @app.post("/analyze")
-def analyze(
-    repo_url: str = Query(..., description="Public Git repository URL (https://github.com/owner/repo.git)"),
-):
+def analyze(body: AnalyzeRequest):
     try:
-        return analyze_repo(repo_url)
+        raw = analyze_repo(body.url)
+        return map_to_frontend(raw)
     except RepoAnalysisError as exc:
         logger.warning("Analysis failed: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc

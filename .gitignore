@@ -1,11 +1,21 @@
-# Secrets
+# Secrets — never commit API keys
 backend/.env
 .env
+**/.env
+**/.env.local
+!.env.example
 
 # Cloned repositories
 backend/data/
 data/*.db
 data/clones/
+
+# Frontend
+frontend/**/node_modules/
+frontend/**/dist/
+frontend/**/.output/
+frontend/**/.wrangler/
+frontend/**/.tanstack/
 
 # Python
 __pycache__/
