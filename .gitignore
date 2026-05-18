@@ -4,6 +4,8 @@ backend/.env
 
 # Cloned repositories
 backend/data/
+data/*.db
+data/clones/
 
 # Python
 __pycache__/
