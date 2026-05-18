@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+gitpython
+networkx
+radon
+requests
+python-dotenv

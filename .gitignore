@@ -1,0 +1,20 @@
+# Secrets
+backend/.env
+.env
+
+# Cloned repositories
+backend/data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+.venv/
+venv/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
