@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { 
-  LayoutDashboard, FolderGit, GitCommit, ShieldAlert, BarChart3, Sparkles,
+  LayoutDashboard, FolderGit, GitCommit, ShieldAlert, BarChart3, Sparkles, Flame,
   RotateCw, ArrowLeft, RefreshCw, Code, CheckSquare, Users, Zap 
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
@@ -25,7 +25,7 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-type TabId = "overview" | "file-tree" | "commits" | "quality" | "forecast" | "risks";
+type TabId = "overview" | "file-tree" | "commits" | "dangerous" | "quality" | "forecast" | "risks";
 
 function getLanguageColor(lang: string): string {
   const colors: Record<string, string> = {
@@ -163,6 +163,7 @@ function Dashboard() {
     { id: "overview", label: "Overview Summary", icon: LayoutDashboard },
     { id: "file-tree", label: "File Tree Explorer", icon: FolderGit },
     { id: "commits", label: "Commit History", icon: GitCommit },
+    { id: "dangerous", label: "Threat Inspector", icon: Flame },
     { id: "quality", label: "Languages & Hotspots", icon: BarChart3 },
     { id: "forecast", label: "AI Forecast Simulator", icon: Sparkles },
     { id: "risks", label: "Risk Assessment", icon: ShieldAlert },
@@ -320,25 +321,26 @@ function Dashboard() {
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="rounded-2xl border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 transition-all duration-300 p-6 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-[0_0_20px_rgba(239,68,68,0.07)]"
+                    onClick={() => setActiveTab("dangerous")}
+                    className="rounded-2xl border border-red-500/35 bg-secondary/15 hover:bg-secondary/35 cursor-pointer transition-all duration-300 p-6 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-[0_0_20px_rgba(239,68,68,0.07)]"
                   >
                     {/* Alert Pulsing Background Mesh */}
-                    <div className="absolute -top-32 -right-32 h-64 w-64 rounded-full bg-red-500 opacity-10 blur-3xl animate-pulse pointer-events-none" />
+                    <div className="absolute -top-32 -right-32 h-64 w-64 rounded-full bg-red-500 opacity-5 blur-3xl animate-pulse pointer-events-none" />
                     
                     <div className="flex-1 space-y-3.5 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="flex h-2 w-2 rounded-full bg-red-500 animate-ping shrink-0" />
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/25">
                           ⚠️ MOST DANGEROUS COMMIT FLAGGED
                         </span>
                       </div>
 
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <h4 className="text-sm font-extrabold text-foreground truncate flex items-center gap-2">
                           Commit: <span className="font-mono text-xs text-primary font-bold bg-secondary/80 px-1.5 py-0.5 rounded select-all">{data.dangerous_commit.hash.substring(0, 8)}</span>
                           <span className="text-muted-foreground font-normal text-xs">by {data.dangerous_commit.author} on {data.dangerous_commit.date}</span>
                         </h4>
-                        <p className="text-xs font-semibold text-red-200/90 leading-relaxed max-w-[800px]">
+                        <p className="text-xs font-semibold text-foreground/90 leading-relaxed max-w-[800px]">
                           "{data.dangerous_commit.ai_explanation}"
                         </p>
                       </div>
@@ -348,7 +350,7 @@ function Dashboard() {
                         <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider block">Affected Codebases ({data.dangerous_commit.affected_files.length})</span>
                         <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto pr-1 scrollbar-thin">
                           {data.dangerous_commit.affected_files.map((file) => (
-                            <span key={file} className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-secondary/35 text-foreground/80 border border-border/10">
+                            <span key={file} className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-secondary/45 text-foreground/80 border border-border/10">
                               {file.split('/').pop()}
                             </span>
                           ))}
@@ -392,6 +394,132 @@ function Dashboard() {
                 transition={{ duration: 0.25 }}
               >
                 <CommitExplorer commits={data.commits} />
+              </motion.div>
+            )}
+
+            {/* Threat Inspector Tab Content (Dedicated Most Dangerous Commit Page with improved design) */}
+            {activeTab === "dangerous" && (
+              <motion.div
+                key="dangerous"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6"
+              >
+                {/* Page Header */}
+                <div className="rounded-2xl border border-red-500/30 bg-red-950/15 p-6 relative overflow-hidden flex items-center gap-4">
+                  <div className="absolute inset-0 bg-mesh opacity-5 blur-3xl pointer-events-none" />
+                  <div className="h-12 w-12 rounded-xl bg-red-500/10 border border-red-500/35 grid place-items-center shrink-0 shadow-[0_0_15px_rgba(239,68,68,0.15)]">
+                    <Flame className="h-6 w-6 text-red-400 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold tracking-tight text-foreground">Threat Inspector</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Automated architectural regression scanning and high-risk commit isolation</p>
+                  </div>
+                </div>
+
+                {data.dangerous_commit ? (
+                  <div className="grid lg:grid-cols-5 gap-6">
+                    {/* Most Dangerous Commit Spotlight (Col Span 3) */}
+                    <div className="lg:col-span-3 rounded-2xl glass-strong glow-border p-6 relative overflow-hidden flex flex-col justify-between min-h-[500px]">
+                      <div className="absolute -top-32 -left-32 h-80 w-80 rounded-full bg-red-500 opacity-5 blur-3xl pointer-events-none" />
+                      
+                      <div className="space-y-4">
+                        <div className="space-y-1.5 pb-4 border-b border-border/30">
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 inline-block">
+                            PRIMARY THREAT ISOLATION
+                          </span>
+                          <h4 className="text-base font-extrabold text-foreground mt-2">
+                            Commit: <span className="font-mono text-sm text-primary font-bold bg-secondary/80 px-1.5 py-0.5 rounded select-all">{data.dangerous_commit.hash}</span>
+                          </h4>
+                          <div className="text-xs text-muted-foreground mt-1 flex items-center gap-4">
+                            <span>Author: <strong className="text-foreground">{data.dangerous_commit.author}</strong></span>
+                            <span>Date: <strong className="text-foreground">{data.dangerous_commit.date}</strong></span>
+                          </div>
+                        </div>
+
+                        {/* AI Forensic Summary Block (High Contrast, Large legible Font) */}
+                        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 space-y-2 relative overflow-hidden">
+                          <div className="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-red-400 animate-pulse" />
+                            AI Forensic Analysis & Threat Report
+                          </div>
+                          <p className="text-sm font-semibold text-foreground leading-relaxed tracking-wide select-text">
+                            "{data.dangerous_commit.ai_explanation}"
+                          </p>
+                        </div>
+
+                        {/* Affected Filepaths tree listing */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Affected Directories & Files ({data.dangerous_commit.affected_files.length})</span>
+                          <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
+                            {data.dangerous_commit.affected_files.map((file) => (
+                              <div key={file} className="flex items-center gap-2 p-2 rounded-lg bg-secondary/20 border border-border/10 text-xs text-foreground/90 font-mono">
+                                <span className="h-1.5 w-1.5 rounded-full bg-red-500/70" />
+                                {file}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Threat Indicators / Score Drop (Col Span 2) */}
+                    <div className="lg:col-span-2 rounded-2xl glass-strong glow-border p-6 relative overflow-hidden flex flex-col justify-between min-h-[500px]">
+                      <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-red-500 opacity-5 blur-3xl pointer-events-none" />
+                      
+                      <div className="space-y-1 pb-4 border-b border-border/30">
+                        <h3 className="text-base font-semibold tracking-tight">Threat Impact Matrix</h3>
+                        <p className="text-xs text-muted-foreground">Architectural score impacts and risk telemetry triggers</p>
+                      </div>
+
+                      <div className="flex-1 flex flex-col items-center justify-center py-6 space-y-6">
+                        <div className="relative h-44 w-44 flex items-center justify-center">
+                          <svg className="absolute inset-0 w-full h-full transform -rotate-90">
+                            <circle cx="88" cy="88" r="76" className="stroke-secondary/35 fill-none" strokeWidth="8" />
+                            <motion.circle 
+                              cx="88" 
+                              cy="88" 
+                              r="76" 
+                              className="fill-none stroke-red-500"
+                              strokeWidth="8"
+                              strokeDasharray="477"
+                              initial={{ strokeDashoffset: 477 }}
+                              animate={{ strokeDashoffset: 477 - (477 * data.dangerous_commit.health_drop) / 100 }}
+                              transition={{ duration: 0.6, ease: "easeOut" }}
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                          
+                          <div className="text-center z-10">
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-red-400 block">Health Drop</span>
+                            <span className="text-4xl font-extrabold text-red-400 tracking-tighter block mt-0.5">-{data.dangerous_commit.health_drop}</span>
+                            <span className="text-[10px] font-bold text-muted-foreground block mt-0.5">POINTS</span>
+                          </div>
+                        </div>
+
+                        <span className="px-3 py-1 rounded-full text-[10px] font-extrabold tracking-wider border bg-red-500/10 text-red-400 border-red-500/25 uppercase">
+                          Isolated Vulnerability
+                        </span>
+                      </div>
+
+                      {/* Remediation steps advisory panel */}
+                      <div className="rounded-xl bg-secondary/30 p-4 border border-border/10 space-y-1.5">
+                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">Suggested Remediation</div>
+                        <p className="text-xs text-foreground/80 leading-relaxed font-medium">
+                          Validate coupling dependencies, write isolation unit tests for modified components, and execute a strict static analysis code review.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl glass-strong glow-border p-12 text-center flex flex-col items-center justify-center gap-3">
+                    <span className="text-4xl">🛡️</span>
+                    <h4 className="text-base font-bold text-foreground">No threats detected</h4>
+                    <p className="text-xs text-muted-foreground max-w-[400px]">The automated code regression engines have scanned all commits and found no severe health dilution events.</p>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -682,7 +810,7 @@ function Dashboard() {
                   <div className="rounded-xl gradient-secondary p-5 border border-border/20 relative overflow-hidden shadow-elegant">
                     <div className="absolute top-0 right-0 h-24 w-24 rounded-full bg-mesh opacity-10 blur-xl pointer-events-none" />
                     <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-primary">
-                      <Sparkles className="h-3.5 w-3.5 animate-spin-slow text-primary" />
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
                       AI Simulation Analyst Report
                     </div>
                     <p className="text-xs text-foreground/80 leading-relaxed font-medium transition-all duration-300">
