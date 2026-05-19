@@ -1,4 +1,5 @@
 import logging
+import os
 import shutil
 import time
 from datetime import datetime, timezone
@@ -52,6 +53,118 @@ def _validate_repo_url(repo_url: str) -> str:
         raise RepoAnalysisError("repo_url must be a valid http(s) URL")
 
     return repo_url
+
+
+def _analyze_languages(repo_path) -> list:
+    extension_map = {
+        ".py": "Python",
+        ".js": "JavaScript",
+        ".jsx": "JSX",
+        ".ts": "TypeScript",
+        ".tsx": "TSX",
+        ".html": "HTML",
+        ".css": "CSS",
+        ".go": "Go",
+        ".rs": "Rust",
+        ".java": "Java",
+        ".cpp": "C++",
+        ".cc": "C++",
+        ".c": "C",
+        ".h": "C/C++ Header",
+        ".sh": "Shell",
+        ".md": "Markdown",
+        ".json": "JSON",
+        ".yml": "YAML",
+        ".yaml": "YAML",
+        ".sql": "SQL",
+        ".rb": "Ruby",
+        ".php": "PHP",
+    }
+    
+    stats = {}
+    total_bytes = 0
+    
+    ignore_dirs = {".git", "node_modules", "venv", "env", "dist", "build", ".next", ".sass-cache", "__pycache__"}
+    
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        for file in files:
+            file_path = os.path.join(root, file)
+            try:
+                if os.path.islink(file_path):
+                    continue
+                size = os.path.getsize(file_path)
+                _, ext = os.path.splitext(file.lower())
+                lang = extension_map.get(ext)
+                if lang:
+                    if lang not in stats:
+                        stats[lang] = {"count": 0, "bytes": 0}
+                    stats[lang]["count"] += 1
+                    stats[lang]["bytes"] += size
+                    total_bytes += size
+            except Exception:
+                pass
+                
+    languages = []
+    if total_bytes > 0:
+        for name, data in stats.items():
+            pct = round((data["bytes"] / total_bytes) * 100, 1)
+            if pct > 0:
+                languages.append({
+                    "language": name,
+                    "file_count": data["count"],
+                    "bytes": data["bytes"],
+                    "percentage": pct
+                })
+        languages.sort(key=lambda x: x["percentage"], reverse=True)
+        
+    return languages
+
+
+def _calculate_file_churn(repo) -> list:
+    file_churn_map = {}
+    try:
+        # Run git log --numstat directly to extract complete historical changes
+        output = repo.git.log("--no-renames", "--numstat", "--pretty=format:")
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            try:
+                ins = int(parts[0]) if parts[0] != "-" else 0
+                dels = int(parts[1]) if parts[1] != "-" else 0
+                filepath = parts[2].strip()
+                if filepath:
+                    # Ignore vendor/dependencies
+                    if not any(x in filepath for x in ("node_modules", "vendor", "dist", "env", "venv", ".git", "__pycache__")):
+                        if filepath not in file_churn_map:
+                            file_churn_map[filepath] = {"churn": 0, "insertions": 0, "deletions": 0}
+                        file_churn_map[filepath]["churn"] += 1
+                        file_churn_map[filepath]["insertions"] += ins
+                        file_churn_map[filepath]["deletions"] += dels
+            except ValueError:
+                pass
+    except Exception as exc:
+        logger.warning("Could not calculate file churn: %s", exc)
+        
+    hotspots = []
+    for filepath, stats in file_churn_map.items():
+        total_delta = stats["insertions"] + stats["deletions"]
+        # risk heuristic: frequency of modification and total lines impacted
+        risk_score = stats["churn"] * 3 + (total_delta // 50)
+        hotspots.append({
+            "filepath": filepath,
+            "churn": stats["churn"],
+            "insertions": stats["insertions"],
+            "deletions": stats["deletions"],
+            "risk_score": min(100, max(10, risk_score))
+        })
+    # sort by risk_score descending
+    hotspots.sort(key=lambda x: x["risk_score"], reverse=True)
+    return hotspots[:10]
 
 
 def _commit_stats(commit) -> dict:
@@ -292,6 +405,9 @@ def analyze_repo(repo_url: str) -> dict:
             ai_summary = f"AI summary unavailable: {exc}"
             logger.warning("AI summary failed: %s", exc)
 
+    languages = _analyze_languages(repo_path)
+    hotspots = _calculate_file_churn(repo)
+
     return {
         "repo": repo_name,
         "total_commits": total_commits,
@@ -301,4 +417,6 @@ def analyze_repo(repo_url: str) -> dict:
         "ai_summary": ai_summary,
         "analysis_seconds": round(analysis_seconds, 2),
         "warnings": warnings,
+        "languages": languages,
+        "hotspots": hotspots,
     }

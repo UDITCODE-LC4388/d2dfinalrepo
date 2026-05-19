@@ -37,6 +37,21 @@ export interface RiskItem {
   description: string;
 }
 
+export interface LanguageStat {
+  language: string;
+  file_count: number;
+  bytes: number;
+  percentage: number;
+}
+
+export interface HotspotStat {
+  filepath: string;
+  churn: number;
+  insertions: number;
+  deletions: number;
+  risk_score: number;
+}
+
 export interface AnalyzeResponse {
   repo_name: string;
   total_commits: number;
@@ -49,6 +64,8 @@ export interface AnalyzeResponse {
   commits: Commit[];
   graph: GraphData;
   risks: RiskItem[];
+  languages?: LanguageStat[];
+  hotspots?: HotspotStat[];
 }
 
 const API_BASE =

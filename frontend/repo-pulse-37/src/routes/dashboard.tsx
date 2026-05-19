@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { 
-  LayoutDashboard, FolderGit, GitCommit, ShieldAlert, 
+  LayoutDashboard, FolderGit, GitCommit, ShieldAlert, BarChart3,
   RotateCw, ArrowLeft, RefreshCw 
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
@@ -25,7 +25,37 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-type TabId = "overview" | "file-tree" | "commits" | "risks";
+type TabId = "overview" | "file-tree" | "commits" | "quality" | "risks";
+
+function getLanguageColor(lang: string): string {
+  const colors: Record<string, string> = {
+    Python: "#3572A5",
+    TypeScript: "#3178C6",
+    TSX: "#2F74C0",
+    JavaScript: "#F1E05A",
+    JSX: "#EFDB50",
+    CSS: "#563D7C",
+    HTML: "#E34C26",
+    Go: "#00ADD8",
+    Rust: "#DEA584",
+    Java: "#B07219",
+    "C++": "#F34B7D",
+    C: "#555555",
+    Shell: "#89e051",
+    Markdown: "#083fa1",
+    JSON: "#29b6f6",
+    YAML: "#cb3f85",
+  };
+  return colors[lang] || "#9b6cf5";
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -81,6 +111,7 @@ function Dashboard() {
     { id: "overview", label: "Overview Summary", icon: LayoutDashboard },
     { id: "file-tree", label: "File Tree Explorer", icon: FolderGit },
     { id: "commits", label: "Commit History", icon: GitCommit },
+    { id: "quality", label: "Languages & Hotspots", icon: BarChart3 },
     { id: "risks", label: "Risk Assessment", icon: ShieldAlert },
   ] as const;
 
@@ -255,6 +286,138 @@ function Dashboard() {
                 transition={{ duration: 0.25 }}
               >
                 <CommitExplorer commits={data.commits} />
+              </motion.div>
+            )}
+
+            {/* Languages & Hotspots Tab Content */}
+            {activeTab === "quality" && (
+              <motion.div
+                key="quality"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="grid lg:grid-cols-5 gap-6"
+              >
+                {/* Left side: Language Breakdown */}
+                <div className="lg:col-span-2 rounded-2xl glass-strong glow-border p-6 relative overflow-hidden flex flex-col min-h-[500px]">
+                  <div className="absolute -top-32 -left-32 h-80 w-80 rounded-full bg-mesh opacity-10 blur-3xl pointer-events-none" />
+                  <div className="space-y-1 pb-4 border-b border-border/30">
+                    <h3 className="text-lg font-semibold tracking-tight">Language Distribution</h3>
+                    <p className="text-xs text-muted-foreground">Dynamic scan of code volumes and file extensions</p>
+                  </div>
+
+                  <div className="flex-1 mt-6 space-y-5 overflow-y-auto max-h-[380px] pr-1 scrollbar-thin">
+                    {data.languages && data.languages.length > 0 ? (
+                      data.languages.map((item) => (
+                        <div key={item.language} className="space-y-1.5 group">
+                          <div className="flex items-center justify-between text-xs font-semibold">
+                            <span className="text-foreground/90 flex items-center gap-2">
+                              <span 
+                                className="h-2.5 w-2.5 rounded-full shadow-glow" 
+                                style={{ 
+                                  background: getLanguageColor(item.language), 
+                                  boxShadow: `0 0 6px ${getLanguageColor(item.language)}` 
+                                }} 
+                              />
+                              {item.language}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {item.file_count} file{item.file_count !== 1 ? 's' : ''} ({formatBytes(item.bytes)})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 h-2.5 bg-secondary/40 rounded-full overflow-hidden">
+                              <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: `${item.percentage}%` }}
+                                transition={{ duration: 0.8, ease: "easeOut" }}
+                                className="h-full rounded-full transition-all group-hover:brightness-110"
+                                style={{ background: getLanguageColor(item.language) }}
+                              />
+                            </div>
+                            <span className="text-[11px] font-bold text-foreground shrink-0 w-10 text-right">
+                              {item.percentage}%
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-center py-20">
+                        <span className="text-3xl">📊</span>
+                        <p className="text-xs text-muted-foreground mt-2 font-medium">No language breakdown compiled yet</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right side: AI Hotspots Table */}
+                <div className="lg:col-span-3 rounded-2xl glass-strong glow-border p-6 relative overflow-hidden flex flex-col min-h-[500px]">
+                  <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-mesh opacity-10 blur-3xl pointer-events-none" />
+                  <div className="space-y-1 pb-4 border-b border-border/30">
+                    <h3 className="text-lg font-semibold tracking-tight">AI Hotspots Scoreboard</h3>
+                    <p className="text-xs text-muted-foreground">Top high-churn modules flagged by dynamic code complexity audits</p>
+                  </div>
+
+                  <div className="flex-1 mt-6 overflow-y-auto max-h-[380px] pr-1 scrollbar-thin space-y-3">
+                    {data.hotspots && data.hotspots.length > 0 ? (
+                      data.hotspots.map((item) => (
+                        <div 
+                          key={item.filepath} 
+                          className="group flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl glass hover:bg-secondary/40 border border-border/10 transition-all duration-150 gap-3"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-foreground font-semibold truncate block">
+                                {item.filepath.split('/').pop()}
+                              </span>
+                              <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                                item.risk_score >= 70 ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                item.risk_score >= 40 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                                'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              }`}>
+                                {item.risk_score >= 70 ? 'Critical' : item.risk_score >= 40 ? 'Warning' : 'Stable'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground font-mono truncate block mt-0.5 select-all">
+                              {item.filepath}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-6 shrink-0 text-right text-xs border-t sm:border-t-0 border-border/10 pt-2 sm:pt-0">
+                            <div>
+                              <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Commit Churn</div>
+                              <div className="font-bold text-foreground mt-0.5">{item.churn} edits</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Lines Modified</div>
+                              <div className="font-bold text-foreground mt-0.5">
+                                <span className="text-emerald-400">+{item.insertions.toLocaleString()}</span>
+                                <span className="text-muted-foreground mx-1">/</span>
+                                <span className="text-red-400">-{item.deletions.toLocaleString()}</span>
+                              </div>
+                            </div>
+                            <div className="w-12 text-center">
+                              <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Risk</div>
+                              <div className={`font-extrabold mt-0.5 ${
+                                item.risk_score >= 70 ? 'text-red-400' :
+                                item.risk_score >= 40 ? 'text-amber-400' :
+                                'text-emerald-400'
+                              }`}>
+                                {item.risk_score}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-center py-20">
+                        <span className="text-3xl">🔥</span>
+                        <p className="text-xs text-muted-foreground mt-2 font-medium">No hotspot scoreboard available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </motion.div>
             )}
 

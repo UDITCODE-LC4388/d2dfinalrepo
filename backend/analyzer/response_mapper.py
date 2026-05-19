@@ -142,4 +142,6 @@ def map_to_frontend(raw: dict) -> dict:
         "risks": _build_risks(commits_raw),
         "analysis_seconds": raw.get("analysis_seconds"),
         "warnings": raw.get("warnings", []),
+        "languages": raw.get("languages", []),
+        "hotspots": raw.get("hotspots", []),
     }
