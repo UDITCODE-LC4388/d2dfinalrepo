@@ -61,5 +61,34 @@ export async function analyzeRepo(url: string): Promise<AnalyzeResponse> {
     { url },
     { timeout: 120000 },
   );
+
   return data;
 }
+
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatResponse {
+  answer: string;
+  sources: string[];
+  model_used: string;
+}
+
+export async function sendChatMessage(
+  message: string,
+  history: ChatMessage[],
+): Promise<ChatResponse> {
+  const { data } = await axios.post<ChatResponse>(
+    `${API_BASE}/chat`,
+    {
+      message,
+      chat_history: history,
+    },
+    { timeout: 30000 },
+  );
+  return data;
+}
+

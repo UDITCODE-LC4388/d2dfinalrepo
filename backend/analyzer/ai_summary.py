@@ -1,19 +1,42 @@
-import requests
+import logging
+from analyzer.llm_client import call_llm
 
-from analyzer.config import GROQ_API_KEY
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
-REQUEST_TIMEOUT_SECONDS = 30
-
+logger = logging.getLogger(__name__)
 
 class AISummaryError(Exception):
     pass
 
+def generate_deterministic_summary(commit: dict) -> str:
+    author = commit.get("author", "Unknown Author")
+    health = commit.get("health_score", 100.0)
+    files = commit.get("files_changed", 0)
+    ins = commit.get("insertions", 0)
+    dels = commit.get("deletions", 0)
+    msg = commit.get("message", "").strip()
+
+    # Determine status label
+    if health >= 85:
+        status = "excellent health score"
+    elif health >= 65:
+        status = "stable baseline score"
+    elif health >= 45:
+        status = "moderate health score due to increased churn"
+    else:
+        status = "warning level score due to high complexity and churn"
+
+    summary = f"The latest commit by {author} results in a {status} of {health:.1f}/100. "
+    summary += f"This commit modified {files} file{'s' if files != 1 else ''} with {ins} insertions and {dels} deletions. "
+    
+    if msg:
+        msg_clean = msg.split('\n')[0]
+        if len(msg_clean) > 85:
+            msg_clean = msg_clean[:82] + "..."
+        summary += f"Development focus: '{msg_clean}'."
+    else:
+        summary += "No commit message was provided."
+    return summary
 
 def generate_summary(commit: dict) -> str:
-    if not GROQ_API_KEY:
-        raise AISummaryError("GROQ_API_KEY is not set in backend/.env")
-
     prompt = f"""Explain this repository health change.
 
 Files changed: {commit['files_changed']}
@@ -23,32 +46,14 @@ Health score: {commit['health_score']}
 
 Give a concise engineering explanation in 2-4 sentences."""
 
+    messages = [
+        {"role": "user", "content": prompt}
+    ]
+
     try:
-        response = requests.post(
-            GROQ_API_URL,
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": GROQ_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        return payload["choices"][0]["message"]["content"]
-    except requests.Timeout as exc:
-        raise AISummaryError("Groq API request timed out") from exc
-    except requests.HTTPError as exc:
-        detail = ""
-        try:
-            detail = exc.response.json().get("error", {}).get("message", "")
-        except Exception:
-            pass
-        raise AISummaryError(detail or str(exc)) from exc
-    except (KeyError, IndexError, ValueError) as exc:
-        raise AISummaryError("Unexpected Groq API response format") from exc
-    except requests.RequestException as exc:
-        raise AISummaryError(f"Groq API request failed: {exc}") from exc
+        reply, model_used = call_llm(messages)
+        logger.info("Generated commit summary using %s.", model_used)
+        return reply
+    except Exception as exc:
+        logger.warning("Central LLM call failed for summary: %s. Falling back to deterministic summary.", exc)
+        return generate_deterministic_summary(commit)
