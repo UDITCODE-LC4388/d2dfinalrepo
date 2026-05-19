@@ -85,7 +85,9 @@ def map_to_frontend(raw: dict) -> dict:
     ai_summary = raw.get("ai_summary", "")
 
     commits = []
-    for i, c in enumerate(commits_raw):
+    # If commits_raw is extremely large, only map the most recent 1000 commits to frontend to save bandwidth/DOM rendering lag!
+    display_commits_raw = commits_raw[:1000]
+    for i, c in enumerate(display_commits_raw):
         if i == 0:
             explanation = ai_summary
         else:
@@ -112,11 +114,26 @@ def map_to_frontend(raw: dict) -> dict:
 
     timeline = []
     chronological = list(reversed(commits_raw))
+    total_timeline_len = len(chronological)
+    if total_timeline_len > 100:
+        # Downsample to 100 points using systematic step sampling
+        step = total_timeline_len / 100
+        sampled = []
+        for index in range(100):
+            idx = int(index * step)
+            if idx < total_timeline_len:
+                sampled.append(chronological[idx])
+        # Always make sure the absolute latest commit is included as the final point!
+        if chronological and chronological[-1] not in sampled:
+            sampled[-1] = chronological[-1]
+        chronological = sampled
+
     for i, c in enumerate(chronological):
+        commit_index = i + 1 if total_timeline_len <= 100 else int((i / 99) * total_timeline_len)
         timeline.append({
-            "commit": i + 1,
+            "commit": commit_index,
             "score": c["health_score"],
-            "date": (c.get("timestamp") or "")[:10] or f"commit-{i + 1}",
+            "date": (c.get("timestamp") or "")[:10] or f"commit-{commit_index}",
         })
 
     repo_slug = raw.get("repo", "unknown")
