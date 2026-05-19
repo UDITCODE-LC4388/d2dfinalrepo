@@ -2,8 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { 
-  LayoutDashboard, FolderGit, GitCommit, ShieldAlert, BarChart3,
-  RotateCw, ArrowLeft, RefreshCw 
+  LayoutDashboard, FolderGit, GitCommit, ShieldAlert, BarChart3, Sparkles,
+  RotateCw, ArrowLeft, RefreshCw, Code, CheckSquare, Users, Zap 
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { MetricCard } from "@/components/dashboard/MetricCard";
@@ -25,7 +25,7 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-type TabId = "overview" | "file-tree" | "commits" | "quality" | "risks";
+type TabId = "overview" | "file-tree" | "commits" | "quality" | "forecast" | "risks";
 
 function getLanguageColor(lang: string): string {
   const colors: Record<string, string> = {
@@ -64,6 +64,12 @@ function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+
+  // Simulation Time Machine States
+  const [refactorHotspots, setRefactorHotspots] = useState(false);
+  const [addTests, setAddTests] = useState(false);
+  const [onboardDevs, setOnboardDevs] = useState(2);
+  const [churnVelocity, setChurnVelocity] = useState(1);
 
   useEffect(() => {
     const cached = sessionStorage.getItem("rhi:data");
@@ -106,12 +112,59 @@ function Dashboard() {
     );
   }
 
+  // Calculate Real-Time Simulation Projections
+  const calculateSimulatedHealth = () => {
+    let score = data.health_score;
+    if (refactorHotspots) score += 15;
+    if (addTests) score += 10;
+    
+    // Onboarding penalizes health due to coordination overhead and coupling drift
+    const onboardingPenalty = onboardDevs * 1.8;
+    // Churn velocity strains code structure and introduces test lag
+    const churnPenalty = (churnVelocity - 1) * 4.5;
+    
+    if (addTests) {
+      // Unit tests offset 70% of team onboarding alignment dilution
+      score -= onboardingPenalty * 0.3;
+    } else {
+      score -= onboardingPenalty;
+    }
+    
+    score -= churnPenalty;
+    return Math.min(100, Math.max(10, Math.round(score)));
+  };
+
+  const simulatedScore = calculateSimulatedHealth();
+
+  // Get dynamic visual style matching the projected score
+  const getScoreVisuals = (score: number) => {
+    if (score >= 80) return { color: "#10b981", badge: "HEALTHY BUILD", ringClass: "stroke-emerald-500 shadow-emerald-500/20" };
+    if (score >= 50) return { color: "#f59e0b", badge: "WARNING STRESS", ringClass: "stroke-amber-500 shadow-amber-500/20" };
+    return { color: "#ef4444", badge: "CRITICAL REGRESSION", ringClass: "stroke-red-500 shadow-red-500/20" };
+  };
+
+  const scoreVisuals = getScoreVisuals(simulatedScore);
+
+  // Dynamic Heuristic Simulation Analyst Advice Generator
+  const generateSimulatedAdvice = () => {
+    if (simulatedScore >= 80) {
+      return `Onboarding ${onboardDevs} developer${onboardDevs !== 1 ? 's' : ''} at ${churnVelocity}x commit frequency remains highly sustainable. Keeping automated testing active and proactively mitigating hotspots guarantees architectural compliance. Excellent codebase health forecast!`;
+    } else if (simulatedScore >= 50) {
+      return `WARNING: Churn velocity and collaborator drift are placing structural strain on codebase modularity. To restore stability, consider enabling hotspot refactoring or expanding unit testing structures immediately to offload coupling drift.`;
+    } else {
+      return `CRITICAL REGRESSION RISK. Adding ${onboardDevs} new developer${onboardDevs !== 1 ? 's' : ''} without test layers or hotspot refactoring dilutes codebase stability. Action required: decompose highly coupled modules like '${data.hotspots?.[0]?.filepath.split('/').pop() || 'main.py'}' immediately.`;
+    }
+  };
+
+  const simulatedAdvice = generateSimulatedAdvice();
+
   // Sidebar Menu Items Definition
   const menuItems = [
     { id: "overview", label: "Overview Summary", icon: LayoutDashboard },
     { id: "file-tree", label: "File Tree Explorer", icon: FolderGit },
     { id: "commits", label: "Commit History", icon: GitCommit },
     { id: "quality", label: "Languages & Hotspots", icon: BarChart3 },
+    { id: "forecast", label: "AI Forecast Simulator", icon: Sparkles },
     { id: "risks", label: "Risk Assessment", icon: ShieldAlert },
   ] as const;
 
@@ -416,6 +469,172 @@ function Dashboard() {
                         <p className="text-xs text-muted-foreground mt-2 font-medium">No hotspot scoreboard available</p>
                       </div>
                     )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* AI Health Forecast Simulator ( stand-out creative Time Machine ) */}
+            {activeTab === "forecast" && (
+              <motion.div
+                key="forecast"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="grid lg:grid-cols-5 gap-6"
+              >
+                {/* Left side: Time Machine controls */}
+                <div className="lg:col-span-2 rounded-2xl glass-strong glow-border p-6 relative overflow-hidden flex flex-col justify-between min-h-[500px]">
+                  <div className="absolute -top-32 -left-32 h-80 w-80 rounded-full bg-mesh opacity-10 blur-3xl pointer-events-none" />
+                  
+                  <div className="space-y-1 pb-4 border-b border-border/30">
+                    <h3 className="text-lg font-semibold tracking-tight">Simulation Parameters</h3>
+                    <p className="text-xs text-muted-foreground">Model future development stress scenarios</p>
+                  </div>
+
+                  <div className="flex-1 mt-6 space-y-6">
+                    {/* Toggles */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Scenario Switches</label>
+                      
+                      <div 
+                        onClick={() => setRefactorHotspots(!refactorHotspots)}
+                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer select-none transition-all duration-150 ${
+                          refactorHotspots 
+                            ? "bg-primary/10 border-primary/40 text-foreground" 
+                            : "bg-secondary/20 border-border/10 text-muted-foreground hover:bg-secondary/40"
+                        }`}
+                      >
+                        <Code className={`h-4.5 w-4.5 shrink-0 ${refactorHotspots ? 'text-primary' : ''}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold">Refactor Critical Hotspots</div>
+                          <div className="text-[9px] text-muted-foreground mt-0.5">Models structural decomposition (+15 points)</div>
+                        </div>
+                      </div>
+
+                      <div 
+                        onClick={() => setAddTests(!addTests)}
+                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer select-none transition-all duration-150 ${
+                          addTests 
+                            ? "bg-success/10 border-success/40 text-foreground" 
+                            : "bg-secondary/20 border-border/10 text-muted-foreground hover:bg-secondary/40"
+                        }`}
+                      >
+                        <CheckSquare className={`h-4.5 w-4.5 shrink-0 ${addTests ? 'text-success' : ''}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold">Add Automated Unit Tests</div>
+                          <div className="text-[9px] text-muted-foreground mt-0.5">Offsets developer coordination overhead (+10 points)</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sliders */}
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-semibold">
+                          <span className="text-foreground/90 flex items-center gap-1.5">
+                            <Users className="h-4 w-4 text-muted-foreground" /> Collaborator Onboarding
+                          </span>
+                          <span className="text-primary font-bold">{onboardDevs} devs</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="1" 
+                          max="15" 
+                          value={onboardDevs} 
+                          onChange={(e) => setOnboardDevs(parseInt(e.target.value))}
+                          className="w-full accent-primary h-1 bg-secondary rounded-lg appearance-none cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[9px] text-muted-foreground">
+                          <span>1 dev</span>
+                          <span>15 devs</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-semibold">
+                          <span className="text-foreground/90 flex items-center gap-1.5">
+                            <Zap className="h-4 w-4 text-muted-foreground" /> Commit Velocity
+                          </span>
+                          <span className="text-primary font-bold">{churnVelocity}x speed</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="1" 
+                          max="5" 
+                          value={churnVelocity} 
+                          onChange={(e) => setChurnVelocity(parseInt(e.target.value))}
+                          className="w-full accent-primary h-1 bg-secondary rounded-lg appearance-none cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[9px] text-muted-foreground">
+                          <span>1x (Normal)</span>
+                          <span>5x (Hyper)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right side: Real-Time Projection Gauge & Advisor */}
+                <div className="lg:col-span-3 rounded-2xl glass-strong glow-border p-6 relative overflow-hidden flex flex-col justify-between min-h-[500px]">
+                  <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-mesh opacity-10 blur-3xl pointer-events-none" />
+                  
+                  <div className="space-y-1 pb-4 border-b border-border/30">
+                    <h3 className="text-lg font-semibold tracking-tight">AI Health Projections</h3>
+                    <p className="text-xs text-muted-foreground">Real-time simulation scores and preventatives</p>
+                  </div>
+
+                  <div className="flex-1 flex flex-col items-center justify-center py-6 space-y-6">
+                    {/* Simulated Health Circle Gauge */}
+                    <div className="relative h-44 w-44 flex items-center justify-center">
+                      <svg className="absolute inset-0 w-full h-full transform -rotate-90">
+                        <circle cx="88" cy="88" r="76" className="stroke-secondary/35 fill-none" strokeWidth="8" />
+                        <motion.circle 
+                          cx="88" 
+                          cy="88" 
+                          r="76" 
+                          className="fill-none transition-colors duration-300"
+                          strokeWidth="8"
+                          stroke={scoreVisuals.color}
+                          strokeDasharray="477"
+                          initial={{ strokeDashoffset: 477 }}
+                          animate={{ strokeDashoffset: 477 - (477 * simulatedScore) / 100 }}
+                          transition={{ duration: 0.5, ease: "easeOut" }}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      
+                      <div className="text-center z-10 space-y-1">
+                        <span className="text-[10px] uppercase font-extrabold tracking-widest text-muted-foreground block">Projected</span>
+                        <span className="text-4xl font-extrabold text-foreground tracking-tighter block">{simulatedScore}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground block">/ 100</span>
+                      </div>
+                    </div>
+
+                    {/* Status Badge */}
+                    <span 
+                      className="px-3 py-1 rounded-full text-[10px] font-extrabold tracking-wider border transition-all duration-300"
+                      style={{ 
+                        backgroundColor: `${scoreVisuals.color}10`, 
+                        color: scoreVisuals.color, 
+                        borderColor: `${scoreVisuals.color}25` 
+                      }}
+                    >
+                      {scoreVisuals.badge}
+                    </span>
+                  </div>
+
+                  {/* Dynamic Simulation Analysis Advisory Card */}
+                  <div className="rounded-xl gradient-secondary p-5 border border-border/20 relative overflow-hidden shadow-elegant">
+                    <div className="absolute top-0 right-0 h-24 w-24 rounded-full bg-mesh opacity-10 blur-xl pointer-events-none" />
+                    <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-primary">
+                      <Sparkles className="h-3.5 w-3.5 animate-spin-slow text-primary" />
+                      AI Simulation Analyst Report
+                    </div>
+                    <p className="text-xs text-foreground/80 leading-relaxed font-medium transition-all duration-300">
+                      {simulatedAdvice}
+                    </p>
                   </div>
                 </div>
               </motion.div>
