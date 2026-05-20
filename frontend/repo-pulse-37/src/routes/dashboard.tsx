@@ -13,7 +13,7 @@ import { FileGraphTree } from "@/components/dashboard/FileGraphTree";
 import { CommitExplorer } from "@/components/dashboard/CommitExplorer";
 import { RiskSection } from "@/components/dashboard/RiskSection";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { analyzeRepo, type AnalyzeResponse } from "@/lib/api";
+import { analyzeRepo, type AnalyzeResponse, getSandboxRefactor, getCicdCheck, getForecastSimulate } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -25,7 +25,7 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-type TabId = "overview" | "file-tree" | "commits" | "dangerous" | "quality" | "forecast" | "risks";
+type TabId = "overview" | "file-tree" | "commits" | "dangerous" | "quality" | "forecast" | "cicd" | "risks" | "sandbox";
 
 function getLanguageColor(lang: string): string {
   const colors: Record<string, string> = {
@@ -80,6 +80,75 @@ function Dashboard() {
 
   // AI Refactoring Sandbox states
   const [activePlaybook, setActivePlaybook] = useState<"complexity" | "coupling" | "churn">("complexity");
+  const [sandboxFile, setSandboxFile] = useState("");
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [sandboxResult, setSandboxResult] = useState<{ advisory: string; before_code: string; after_code: string } | null>(null);
+
+  // CI/CD PR Guard states
+  const [prLoading, setPrLoading] = useState(false);
+  const [prReport, setPrReport] = useState("");
+  const [prRiskScore, setPrRiskScore] = useState(40);
+
+  // AI Forecast Simulator states
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [simulatedScore, setSimulatedScore] = useState(data?.health_score || 80);
+  const [simulatedAdvice, setSimulatedAdvice] = useState("");
+
+  useEffect(() => {
+    if (data?.hotspots && data.hotspots.length > 0) {
+      setPrFile(data.hotspots[0].filepath);
+      setSandboxFile(data.hotspots[0].filepath);
+    }
+  }, [data]);
+
+  // Dynamic Sandbox effect
+  useEffect(() => {
+    if (!repoUrl || !sandboxFile) return;
+    let active = true;
+    const fetchSandbox = async () => {
+      setSandboxLoading(true);
+      setSandboxResult(null);
+      try {
+        const res = await getSandboxRefactor(repoUrl, sandboxFile, activePlaybook);
+        if (active) {
+          setSandboxResult(res);
+        }
+      } catch (err) {
+        console.error("Failed to fetch sandbox refactor blueprint:", err);
+      } finally {
+        if (active) {
+          setSandboxLoading(false);
+        }
+      }
+    };
+    fetchSandbox();
+    return () => { active = false; };
+  }, [activePlaybook, sandboxFile, repoUrl]);
+
+  // Dynamic Forecast effect (debounced)
+  useEffect(() => {
+    if (!repoUrl || !data) return;
+    const delayDebounceFn = setTimeout(async () => {
+      setForecastLoading(true);
+      try {
+        const res = await getForecastSimulate(
+          repoUrl,
+          refactorHotspots,
+          addTests,
+          onboardDevs,
+          churnVelocity,
+          data.health_score
+        );
+        setSimulatedScore(res.projected_score);
+        setSimulatedAdvice(res.report);
+      } catch (err) {
+        console.error("Forecast simulation failed:", err);
+      } finally {
+        setForecastLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [repoUrl, refactorHotspots, addTests, onboardDevs, churnVelocity, data?.health_score]);
 
   useEffect(() => {
     const cached = sessionStorage.getItem("rhi:data");
@@ -144,8 +213,6 @@ function Dashboard() {
     return Math.min(100, Math.max(10, Math.round(score)));
   };
 
-  const simulatedScore = calculateSimulatedHealth();
-
   // Get dynamic visual style matching the projected score
   const getScoreVisuals = (score: number) => {
     if (score >= 80) return { color: "#10b981", badge: "HEALTHY BUILD", ringClass: "stroke-emerald-500 shadow-emerald-500/20" };
@@ -155,19 +222,6 @@ function Dashboard() {
 
   const scoreVisuals = getScoreVisuals(simulatedScore);
 
-  // Dynamic Heuristic Simulation Analyst Advice Generator
-  const generateSimulatedAdvice = () => {
-    if (simulatedScore >= 80) {
-      return `Onboarding ${onboardDevs} developer${onboardDevs !== 1 ? 's' : ''} at ${churnVelocity}x commit frequency remains highly sustainable. Keeping automated testing active and proactively mitigating hotspots guarantees architectural compliance. Excellent codebase health forecast!`;
-    } else if (simulatedScore >= 50) {
-      return `WARNING: Churn velocity and collaborator drift are placing structural strain on codebase modularity. To restore stability, consider enabling hotspot refactoring or expanding unit testing structures immediately to offload coupling drift.`;
-    } else {
-      return `CRITICAL REGRESSION RISK. Adding ${onboardDevs} new developer${onboardDevs !== 1 ? 's' : ''} without test layers or hotspot refactoring dilutes codebase stability. Action required: decompose highly coupled modules like '${data.hotspots?.[0]?.filepath.split('/').pop() || 'main.py'}' immediately.`;
-    }
-  };
-
-  const simulatedAdvice = generateSimulatedAdvice();
-
   // Sidebar Menu Items Definition
   const menuItems = [
     { id: "overview", label: "Overview Summary", icon: LayoutDashboard },
@@ -176,8 +230,158 @@ function Dashboard() {
     { id: "dangerous", label: "Threat Inspector", icon: Flame },
     { id: "quality", label: "Languages & Hotspots", icon: BarChart3 },
     { id: "forecast", label: "AI Forecast Simulator", icon: Sparkles },
+    { id: "cicd", label: "CI/CD PR Guard", icon: ShieldCheck },
     { id: "risks", label: "Risk Assessment", icon: ShieldAlert },
+    { id: "sandbox", label: "Interactive Sandbox", icon: Code },
   ] as const;
+
+  const getPlaybookContent = (type: "complexity" | "coupling" | "churn", filepath: string) => {
+    const filename = filepath.split('/').pop() || "module.py";
+    const ext = filename.split('.').pop()?.toLowerCase() || "py";
+    
+    let beforeCode = "";
+    let afterCode = "";
+    let advisory = "";
+    
+    if (type === "complexity") {
+      advisory = `Decompose deep branch conditionals in ${filename} to flatten cyclomatic hierarchies and improve test coverage.`;
+      if (["js", "ts", "jsx", "tsx"].includes(ext)) {
+        beforeCode = `// Inside ${filename} (Anti-Pattern)
+function processUser(user) {
+  if (user) {
+    if (user.auth) {
+      if (user.auth.roles) {
+        user.auth.roles.forEach(r => {
+          if (r === 'admin') {
+            initializeAdmin(user);
+          }
+        });
+      }
+    }
+  }
+}`;
+        afterCode = `// Inside ${filename} (Optimized)
+function processUser(user) {
+  const isAdmin = user?.auth?.roles?.includes('admin');
+  if (isAdmin) {
+    initializeAdmin(user);
+  }
+}`;
+      } else if (["go"].includes(ext)) {
+        beforeCode = `// Inside ${filename} (Anti-Pattern)
+func ProcessUser(user *User) {
+    if user != nil {
+        if user.Auth != nil {
+            for _, r := range user.Auth.Roles {
+                if r == "admin" {
+                    InitAdmin(user)
+                }
+            }
+        }
+    }
+}`;
+        afterCode = `// Inside ${filename} (Optimized)
+func ProcessUser(user *User) {
+    if user == nil || user.Auth == nil {
+        return
+    }
+    for _, r := range user.Auth.Roles {
+        if r == "admin" {
+            InitAdmin(user)
+            break
+        }
+    }
+}`;
+      } else {
+        beforeCode = `# Inside ${filename} (Anti-Pattern)
+def handle_auth(user):
+    if user:
+        if user.is_active:
+            if user.roles:
+                for r in user.roles:
+                    if r == 'admin':
+                        grant_admin()`;
+        afterCode = `# Inside ${filename} (Optimized)
+def handle_auth(user):
+    if not user or not user.is_active:
+        return
+    if 'admin' in user.roles:
+        grant_admin()`;
+      }
+    } else if (type === "coupling") {
+      advisory = `Bypass circular direct package imports in ${filename} by implementing observer registers or a dynamic dispatcher.`;
+      if (["js", "ts", "jsx", "tsx"].includes(ext)) {
+        beforeCode = `// Inside ${filename} (Coupled)
+import { PaymentService } from './PaymentService';
+
+export function login(user) {
+  PaymentService.verify(user);
+}`;
+        afterCode = `// Inside ${filename} (Decoupled)
+import { eventEmitter } from './EventEmitter';
+
+export function login(user) {
+  eventEmitter.emit('user:login', user);
+}`;
+      } else if (["go"].includes(ext)) {
+        beforeCode = `// Inside ${filename} (Coupled)
+import "project/payment"
+
+func Login(user *User) {
+    payment.Verify(user)
+}`;
+        afterCode = `// Inside ${filename} (Decoupled)
+import "project/events"
+
+func Login(user *User) {
+    events.Publish("user_login", user)
+}`;
+      } else {
+        beforeCode = `# Inside ${filename} (Coupled)
+import PaymentService
+
+def login():
+    PaymentService.verify()`;
+        afterCode = `# Inside ${filename} (Decoupled)
+# Observer Pattern / Event dispatcher
+def login():
+    notify('user_login')`;
+      }
+    } else {
+      advisory = `Isolate high-frequency modifications in ${filename} to prevent regression issues in adjacent stable libraries.`;
+      if (["js", "ts", "jsx", "tsx"].includes(ext)) {
+        beforeCode = `// Inside ${filename} (High Churn)
+export class UserSession {
+  constructor() {
+    this.commits = 15; // daily edits
+  }
+}`;
+        afterCode = `// Inside ${filename} (Decoupled Interface)
+export interface ISessionStore {
+  // Static interface layer to lock core edits
+}`;
+      } else if (["go"].includes(ext)) {
+        beforeCode = `// Inside ${filename} (High Churn)
+type UserSession struct {
+    Commits int // 15 commits daily
+}`;
+        afterCode = `// Inside ${filename} (Decoupled Interface)
+type SessionStore interface {
+    // Locked interface prevents daily churn impact
+}`;
+      } else {
+        beforeCode = `# Inside ${filename} (High Churn)
+class UserSession:
+    def __init__(self):
+        # 15 commits daily`;
+        afterCode = `# Inside ${filename} (Decoupled Solution)
+class ISessionStore:
+    # Locked, no daily edits`;
+      }
+    }
+    
+    return { beforeCode, afterCode, advisory };
+  };
 
   return (
     <div className="relative min-h-screen flex flex-col md:flex-row bg-background">
@@ -406,75 +610,7 @@ function Dashboard() {
               >
                 <CommitExplorer commits={data.commits} />
 
-                {/* CREATIVE FEATURE 1: Developer Coordination Velocity Map */}
-                <div className="rounded-2xl glass-strong glow-border p-6 mt-6 relative overflow-hidden">
-                  <div className="absolute -top-32 -right-32 h-64 w-64 rounded-full bg-primary opacity-5 blur-3xl pointer-events-none" />
-                  
-                  <div className="flex items-center justify-between pb-4 border-b border-border/30">
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 grid place-items-center">
-                        <Users className="h-4 w-4 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-foreground">Team Coordination Velocity Map</h3>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Live developer alignment structures, collaboration volumes, and bus factor hot-spots</p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
-                      COLLABORATION AUDIT
-                    </span>
-                  </div>
-
-                  <div className="grid md:grid-cols-3 gap-6 mt-6">
-                    <div className="rounded-xl bg-secondary/20 border border-border/10 p-5 space-y-4">
-                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">Bus Factor Health</div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-3xl font-extrabold text-foreground">{data.bus_factor}</span>
-                        <span className="text-xs text-muted-foreground">Active Contributors</span>
-                      </div>
-                      <div className={`p-2.5 rounded-lg border text-[10px] leading-relaxed font-semibold ${
-                        data.bus_factor < 3 
-                          ? "bg-amber-500/10 text-amber-400 border-amber-500/25" 
-                          : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
-                      }`}>
-                        {data.bus_factor < 3 
-                          ? "⚠️ SINGLE-POINT-OF-FAILURE RISKS: High centralization of core modules poses a bottleneck." 
-                          : "✓ HEALTHY DELEGATION: Knowledge distribution is evenly balanced across collaborators."
-                        }
-                      </div>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-4">
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Contributor Ownership Profiles</span>
-                      
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-foreground/90">Primary Architect (UDIT SINGHI)</span>
-                            <span className="font-mono text-primary font-bold">78.5% of edits</span>
-                          </div>
-                          <div className="h-2 bg-secondary/40 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: "78.5%" }} />
-                          </div>
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-foreground/90">Secondary Collaborators (Shared Pool)</span>
-                            <span className="font-mono text-muted-foreground font-semibold">21.5% of edits</span>
-                          </div>
-                          <div className="h-2 bg-secondary/40 rounded-full overflow-hidden">
-                            <div className="h-full bg-muted rounded-full" style={{ width: "21.5%" }} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        <strong>AI Collaboration Advice:</strong> Consider delegating core edits to multiple authors to decrease repository centralisation overhead.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                
               </motion.div>
             )}
 
@@ -736,58 +872,7 @@ function Dashboard() {
                   </div>
                 </div>
 
-                {/* CREATIVE FEATURE 2: Green-Code Sustainability Telemetry */}
-                <div className="rounded-2xl glass-strong glow-border p-6 mt-6 relative overflow-hidden">
-                  <div className="absolute -bottom-32 -left-32 h-64 w-64 rounded-full bg-emerald-500 opacity-5 blur-3xl pointer-events-none" />
-                  
-                  <div className="flex items-center justify-between pb-4 border-b border-border/30">
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 grid place-items-center">
-                        <Leaf className="h-4 w-4 text-emerald-400" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-foreground">Green-Code Sustainability Telemetry</h3>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Environmental footprint audit and server runtime execution efficiency ratings</p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">
-                      ECO-TELEMETRY
-                    </span>
-                  </div>
-
-                  <div className="grid md:grid-cols-3 gap-6 mt-6">
-                    <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/15 p-5 flex flex-col items-center justify-center text-center space-y-2.5">
-                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-emerald-400">Green Code Rating</span>
-                      <div className="text-5xl font-extrabold text-emerald-400 tracking-tighter">A<span className="text-xl">+</span></div>
-                      <span className="text-[10px] text-muted-foreground font-medium">Resource Efficient Build</span>
-                    </div>
-
-                    <div className="md:col-span-2 flex flex-col justify-between space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-foreground/90">Compilation Efficiency Index</span>
-                          <span className="font-mono text-emerald-400 font-bold">94.2%</span>
-                        </div>
-                        <div className="h-1.5 bg-secondary/40 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-400 rounded-full" style={{ width: "94.2%" }} />
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-foreground/80 leading-relaxed leading-5">
-                        <strong>Sustainability Assessment:</strong> Your codebase exhibits high eco-efficiency! The core application logic avoids unnecessary execution cycles, and modular decoupled dependencies keep compiler footprints minimal. To optimize further, consider shifting high-frequency utility modules into compiled static runtimes.
-                      </p>
-
-                      <div className="flex flex-wrap gap-2">
-                        <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-secondary/35 text-foreground/80 border border-border/10">
-                          🌱 Eco-Optimized Architecture
-                        </span>
-                        <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-secondary/35 text-foreground/80 border border-border/10">
-                          ⚡ Low Execution Footprint
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                
               </motion.div>
             )}
 
@@ -950,120 +1035,22 @@ function Dashboard() {
                         <Sparkles className="h-3.5 w-3.5 text-primary" />
                         AI Simulation Analyst Report
                       </div>
-                      <p className="text-xs text-foreground/80 leading-relaxed font-medium transition-all duration-300">
-                        {simulatedAdvice}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* CREATIVE FEATURE 3: CI/CD Pre-Flight PR Guard */}
-                <div className="rounded-2xl glass-strong glow-border p-6 mt-6 relative overflow-hidden">
-                  <div className="absolute -top-32 -left-32 h-64 w-64 rounded-full bg-primary opacity-5 blur-3xl pointer-events-none" />
-                  <div className="space-y-1 pb-4 border-b border-border/30 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-bold tracking-tight">CI/CD Pre-Flight Pull Request Guard</h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">Simulate live branch integrations to forecast architectural impact before committing</p>
-                    </div>
-                    <span className="text-[9px] font-extrabold tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
-                      FUTURISTIC TELEMETRY
-                    </span>
-                  </div>
-
-                  <div className="grid md:grid-cols-3 gap-6 mt-6">
-                    <div className="space-y-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Target Filename</label>
-                        <input 
-                          type="text" 
-                          value={prFile}
-                          onChange={(e) => { setPrFile(e.target.value); setPrChecked(false); }}
-                          className="w-full bg-secondary/30 border border-border/20 rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none focus:border-primary/50"
-                          placeholder="e.g. auth_service.py"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Insertions</label>
-                          <input 
-                            type="number" 
-                            value={prInsertions}
-                            onChange={(e) => { setPrInsertions(parseInt(e.target.value) || 0); setPrChecked(false); }}
-                            className="w-full bg-secondary/30 border border-border/20 rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Deletions</label>
-                          <input 
-                            type="number" 
-                            value={prDeletions}
-                            onChange={(e) => { setPrDeletions(parseInt(e.target.value) || 0); setPrChecked(false); }}
-                            className="w-full bg-secondary/30 border border-border/20 rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none"
-                          />
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const isHighRisk = prInsertions > 350 || (prFile.toLowerCase().includes("auth") && prInsertions > 150);
-                          setPrStatus(isHighRisk ? "FAIL" : "PASS");
-                          setPrChecked(true);
-                        }}
-                        className="w-full py-2.5 rounded-xl gradient-primary text-white text-xs font-semibold hover:shadow-glow transition-all"
-                      >
-                        Run Safety Check
-                      </button>
-                    </div>
-
-                    <div className="md:col-span-2 rounded-xl bg-secondary/20 border border-border/10 p-5 flex flex-col justify-between min-h-[160px]">
-                      {prChecked ? (
-                        <div className="space-y-3.5 flex-1 flex flex-col justify-between">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase">SIMULATION RESULTS</span>
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                              prStatus === "PASS" 
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25" 
-                                : "bg-red-500/10 text-red-400 border-red-500/25"
-                            }`}>
-                              {prStatus === "PASS" ? "✓ PR APPROVED" : "✗ INTEGRATION BLOCKED"}
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-foreground font-medium leading-relaxed">
-                            {prStatus === "PASS" 
-                              ? `Safe contribution signature. Integrating '${prFile}' adding ${prInsertions} lines introduces negligible architectural coupling. Health regression score remains under threshold (0.2 pts drop forecasted).`
-                              : `VULNERABILITY DETECTED. PARENT BLOCK WARNING: File '${prFile}' has high coupling scores. Adding ${prInsertions} lines with only ${prDeletions} deletions breaches modular limits. Immediate decoupling required before landing this branch.`
-                            }
-                          </p>
-
-                          <div className="flex gap-2">
-                            {prStatus === "PASS" ? (
-                              <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                Architecture Stability Maintained
-                              </span>
-                            ) : (
-                              <>
-                                <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
-                                  Breaches Modular Decoupling limits
-                                </span>
-                                <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                  Violates Hotspot Stability
-                                </span>
-                              </>
-                            )}
-                          </div>
+                      {forecastLoading ? (
+                        <div className="space-y-2 animate-pulse">
+                          <div className="h-3.5 bg-foreground/10 rounded w-full"></div>
+                          <div className="h-3.5 bg-foreground/10 rounded w-5/6"></div>
+                          <div className="h-3.5 bg-foreground/10 rounded w-4/5"></div>
                         </div>
                       ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-2">
-                          <ShieldCheck className="h-8 w-8 text-muted-foreground opacity-50 shadow-glow" />
-                          <h4 className="text-xs font-bold text-foreground">Awaiting telemetry run...</h4>
-                          <p className="text-[10px] text-muted-foreground max-w-[320px]">
-                            Input your simulated Pull Request parameters on the left and run safety check to analyze branching impact.
-                          </p>
-                        </div>
+                        <p className="text-xs text-foreground/80 leading-relaxed font-medium transition-all duration-300">
+                          {simulatedAdvice || "Adjust simulation parameters on the left to project repository health..."}
+                        </p>
                       )}
                     </div>
                   </div>
                 </div>
+
+                
               </motion.div>
             )}
 
@@ -1118,7 +1105,160 @@ function Dashboard() {
                   </motion.div>
                 </div>
 
-                {/* CREATIVE FEATURE 4: Interactive AI Refactoring Playbook Sandbox */}
+                
+              </motion.div>
+            )}
+
+            
+
+
+            {/* CI/CD PR Guard Tab Content */}
+            {activeTab === "cicd" && (
+              <motion.div
+                key="cicd"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6"
+              >
+                <div className="rounded-2xl glass-strong glow-border p-6 mt-6 relative overflow-hidden">
+                  <div className="absolute -top-32 -left-32 h-64 w-64 rounded-full bg-primary opacity-5 blur-3xl pointer-events-none" />
+                  <div className="space-y-1 pb-4 border-b border-border/30 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold tracking-tight">CI/CD Pre-Flight Pull Request Guard</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Simulate live branch integrations to forecast architectural impact before committing</p>
+                    </div>
+                    <span className="text-[9px] font-extrabold tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+                      FUTURISTIC TELEMETRY
+                    </span>
+                  </div>
+
+                  <div className="grid md:grid-cols-3 gap-6 mt-6">
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Target Filename</label>
+                        <input 
+                          type="text" 
+                          value={prFile}
+                          onChange={(e) => { setPrFile(e.target.value); setPrChecked(false); }}
+                          className="w-full bg-secondary/30 border border-border/20 rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none focus:border-primary/50"
+                          placeholder="e.g. auth_service.py"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Insertions</label>
+                          <input 
+                            type="number" 
+                            value={prInsertions}
+                            onChange={(e) => { setPrInsertions(parseInt(e.target.value) || 0); setPrChecked(false); }}
+                            className="w-full bg-secondary/30 border border-border/20 rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Deletions</label>
+                          <input 
+                            type="number" 
+                            value={prDeletions}
+                            onChange={(e) => { setPrDeletions(parseInt(e.target.value) || 0); setPrChecked(false); }}
+                            className="w-full bg-secondary/30 border border-border/20 rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!repoUrl || !prFile) return;
+                          setPrLoading(true);
+                          try {
+                            const res = await getCicdCheck(repoUrl, prFile, prInsertions, prDeletions);
+                            setPrStatus(res.passed ? "PASS" : "FAIL");
+                            setPrReport(res.report);
+                            setPrRiskScore(res.risk_score);
+                            setPrChecked(true);
+                          } catch (err) {
+                            console.error("Failed to run CI/CD check:", err);
+                          } finally {
+                            setPrLoading(false);
+                          }
+                        }}
+                        disabled={prLoading}
+                        className="w-full py-2.5 rounded-xl gradient-primary text-white text-xs font-semibold hover:shadow-glow transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {prLoading ? (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            Analyzing...
+                          </>
+                        ) : (
+                          "Run Safety Check"
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="md:col-span-2 rounded-xl bg-secondary/20 border border-border/10 p-5 flex flex-col justify-between min-h-[160px]">
+                      {prChecked ? (
+                        <div className="space-y-3.5 flex-1 flex flex-col justify-between">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase">SIMULATION RESULTS</span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                              prStatus === "PASS" 
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25" 
+                                : "bg-red-500/10 text-red-400 border-red-500/25"
+                            }`}>
+                              {prStatus === "PASS" ? "✓ PR APPROVED" : "✗ INTEGRATION BLOCKED"}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-foreground font-medium leading-relaxed">
+                            {prReport || (prStatus === "PASS"
+                              ? `Safe contribution signature. Integrating '${prFile}' adding ${prInsertions} lines introduces negligible architectural coupling. Health regression score remains under threshold (0.2 pts drop forecasted).`
+                              : `VULNERABILITY DETECTED. PARENT BLOCK WARNING: File '${prFile}' has a high baseline risk. Adding ${prInsertions} lines with only ${prDeletions} deletions breaches modular limits. Immediate decoupling required before landing this branch.`)}
+                          </p>
+
+                          <div className="flex gap-2">
+                            {prStatus === "PASS" ? (
+                              <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                Architecture Stability Maintained
+                              </span>
+                            ) : (
+                              <>
+                                <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                                  Breaches Modular Decoupling limits
+                                </span>
+                                <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  Violates Hotspot Stability
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-2">
+                          <ShieldCheck className="h-8 w-8 text-muted-foreground opacity-50 shadow-glow" />
+                          <h4 className="text-xs font-bold text-foreground">Awaiting telemetry run...</h4>
+                          <p className="text-[10px] text-muted-foreground max-w-[320px]">
+                            Input your simulated Pull Request parameters on the left and run safety check to analyze branching impact.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+
+            {/* Interactive Sandbox Tab Content */}
+            {activeTab === "sandbox" && (
+              <motion.div
+                key="sandbox"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6"
+              >
                 <div className="rounded-2xl glass-strong glow-border p-6 mt-6 relative overflow-hidden">
                   <div className="absolute -top-32 -left-32 h-64 w-64 rounded-full bg-primary opacity-5 blur-3xl pointer-events-none" />
                   
@@ -1138,7 +1278,22 @@ function Dashboard() {
                   </div>
 
                   <div className="grid md:grid-cols-4 gap-6 mt-6">
-                    <div className="space-y-2 flex flex-col">
+                    <div className="space-y-4 flex flex-col">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Target File to Refactor</label>
+                        <select 
+                          value={sandboxFile} 
+                          onChange={(e) => setSandboxFile(e.target.value)}
+                          className="w-full bg-secondary/30 border border-border/20 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary/50"
+                        >
+                          {data?.hotspots?.map(h => (
+                            <option key={h.filepath} value={h.filepath} className="bg-background text-foreground">
+                              {h.filepath.split('/').pop()} ({h.risk_score} Risk)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-1">Target Anti-Pattern</span>
                       
                       <button 
@@ -1176,109 +1331,76 @@ function Dashboard() {
                     </div>
 
                     <div className="md:col-span-3 space-y-4">
-                      {activePlaybook === "complexity" && (
-                        <div className="space-y-4">
-                          <div className="rounded-xl bg-secondary/30 p-4 border border-border/10 space-y-1">
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Blueprints Advisory</span>
-                            <p className="text-xs text-foreground/80 leading-relaxed font-semibold">
-                              <strong>Decompose deep branch conditionals:</strong> Replace nested nested loops with guard assertions and split subroutines to flatten cyclomatic hierarchies.
-                            </p>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] uppercase font-bold text-red-400 tracking-wider">Before (Anti-Pattern)</span>
-                              <pre className="text-[10px] font-mono p-3 bg-red-950/10 border border-red-500/10 rounded-xl overflow-x-auto text-red-200 leading-relaxed select-all">
-{`def handle_auth(user):
-    if user:
-        if user.is_active:
-            if user.roles:
-                for r in user.roles:
-                    if r == 'admin':
-                        grant_admin()`}
-                              </pre>
-                            </div>
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] uppercase font-bold text-emerald-400 tracking-wider">After (Optimized)</span>
-                              <pre className="text-[10px] font-mono p-3 bg-emerald-950/10 border border-emerald-500/10 rounded-xl overflow-x-auto text-emerald-200 leading-relaxed select-all">
-{`def handle_auth(user):
-    if not user or not user.is_active:
-        return
-    if 'admin' in user.roles:
-        grant_admin()`}
-                              </pre>
-                            </div>
+                      {sandboxLoading ? (
+                        <div className="space-y-4 p-8 glass-strong rounded-xl border border-border/10 flex flex-col items-center justify-center min-h-[300px]">
+                          <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+                          <div className="text-xs font-semibold text-muted-foreground animate-pulse">
+                            AI analyzing '{sandboxFile.split('/').pop()}' for {activePlaybook}...
                           </div>
                         </div>
-                      )}
-
-                      {activePlaybook === "coupling" && (
-                        <div className="space-y-4">
-                          <div className="rounded-xl bg-secondary/30 p-4 border border-border/10 space-y-1">
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Blueprints Advisory</span>
-                            <p className="text-xs text-foreground/80 leading-relaxed font-semibold">
-                              <strong>Decouple interfaces:</strong> Bypass circular direct package imports by implementing a centralized message broker or clean observer registers.
-                            </p>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] uppercase font-bold text-red-400 tracking-wider">Before (Coupled)</span>
-                              <pre className="text-[10px] font-mono p-3 bg-red-950/10 border border-red-500/10 rounded-xl overflow-x-auto text-red-200 leading-relaxed select-all">
-{`# Inside Auth.py
-import PaymentService
-
-def login():
-    PaymentService.verify()`}
-                              </pre>
+                      ) : (
+                        (() => {
+                          const fallback = getPlaybookContent(activePlaybook, sandboxFile || data?.hotspots?.[0]?.filepath || "module.py");
+                          const adv = sandboxResult?.advisory || fallback.advisory;
+                          const formatCode = (val: any) => {
+                            if (val === null || val === undefined) return "";
+                            if (typeof val === "object") {
+                              return JSON.stringify(val, null, 2);
+                            }
+                            return String(val);
+                          };
+                          const before = formatCode(sandboxResult?.before_code || fallback.beforeCode);
+                          const after = formatCode(sandboxResult?.after_code || fallback.afterCode);
+                          return (
+                            <div className="space-y-4">
+                              <div className="rounded-xl bg-secondary/30 p-4 border border-border/10 space-y-1">
+                                <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Blueprints Advisory</span>
+                                <p className="text-xs text-foreground/80 leading-relaxed font-semibold">
+                                  <strong>
+                                    {activePlaybook === "complexity" ? "Decompose branch conditionals: " : 
+                                     activePlaybook === "coupling" ? "Decouple interfaces: " : 
+                                     "Isolate high-frequency files: "}
+                                  </strong>
+                                  {adv}
+                                </p>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                  <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                                    activePlaybook === "churn" ? "text-red-700 dark:text-red-400 font-bold" : "text-red-400"
+                                  }`}>
+                                    {activePlaybook === "complexity" ? "Before (Anti-Pattern)" : 
+                                     activePlaybook === "coupling" ? "Before (Coupled)" : 
+                                     "High Churn Warning"}
+                                  </span>
+                                  <pre className="text-[10px] font-mono p-3 bg-red-950/10 border border-red-500/10 rounded-xl overflow-x-auto text-red-700 dark:text-red-200 font-semibold leading-relaxed select-all">
+{before}
+                                  </pre>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                                    activePlaybook === "churn" ? "text-emerald-700 dark:text-emerald-400 font-bold" : "text-emerald-400"
+                                  }`}>
+                                    {activePlaybook === "complexity" ? "After (Optimized)" : 
+                                     activePlaybook === "coupling" ? "After (Decoupled)" : 
+                                     "Decoupled Solution"}
+                                  </span>
+                                  <pre className="text-[10px] font-mono p-3 bg-emerald-950/10 border border-emerald-500/10 rounded-xl overflow-x-auto text-emerald-700 dark:text-emerald-200 font-semibold leading-relaxed select-all">
+{after}
+                                  </pre>
+                                </div>
+                              </div>
                             </div>
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] uppercase font-bold text-emerald-400 tracking-wider">After (Decoupled)</span>
-                              <pre className="text-[10px] font-mono p-3 bg-emerald-950/10 border border-emerald-500/10 rounded-xl overflow-x-auto text-emerald-200 leading-relaxed select-all">
-{`# Central Dispatcher
-def login():
-    notify('user_login')`}
-                              </pre>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {activePlaybook === "churn" && (
-                        <div className="space-y-4">
-                          <div className="rounded-xl bg-secondary/30 p-4 border border-border/10 space-y-1">
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Blueprints Advisory</span>
-                            <p className="text-xs text-foreground/80 leading-relaxed font-semibold">
-                              <strong>Isolate high-frequency files:</strong> Standardize interfaces and lock critical baseline components so that daily developer churn remains localized.
-                            </p>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] uppercase font-bold text-red-400 tracking-wider">High Churn Warning</span>
-                              <pre className="text-[10px] font-mono p-3 bg-red-950/10 border border-red-500/10 rounded-xl overflow-x-auto text-red-200 leading-relaxed select-all">
-{`# Frequently modified
-class UserSession:
-    def __init__(self):
-        # 15 commits daily`}
-                              </pre>
-                            </div>
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] uppercase font-bold text-emerald-400 tracking-wider">Decoupled Solution</span>
-                              <pre className="text-[10px] font-mono p-3 bg-emerald-950/10 border border-emerald-500/10 rounded-xl overflow-x-auto text-emerald-200 leading-relaxed select-all">
-{`# Immutable Core Interface
-class ISessionStore:
-    # Locked, no daily edits`}
-                              </pre>
-                            </div>
-                          </div>
-                        </div>
+                          );
+                        })()
                       )}
                     </div>
                   </div>
                 </div>
               </motion.div>
             )}
+
           </AnimatePresence>
         </div>
 

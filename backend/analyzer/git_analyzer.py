@@ -153,14 +153,14 @@ def _calculate_file_churn(repo) -> list:
     hotspots = []
     for filepath, stats in file_churn_map.items():
         total_delta = stats["insertions"] + stats["deletions"]
-        # risk heuristic: frequency of modification and total lines impacted
-        risk_score = stats["churn"] * 3 + (total_delta // 50)
+        # risk heuristic: frequency of modification and total lines impacted, normalized to avoid capping at 100 for all top hotspots
+        risk_score = int(45 + (stats["churn"] * 0.5) + (total_delta // 150))
         hotspots.append({
             "filepath": filepath,
             "churn": stats["churn"],
             "insertions": stats["insertions"],
             "deletions": stats["deletions"],
-            "risk_score": min(100, max(10, risk_score))
+            "risk_score": min(98, max(30, risk_score))
         })
     # sort by risk_score descending
     hotspots.sort(key=lambda x: x["risk_score"], reverse=True)

@@ -119,3 +119,75 @@ export async function sendChatMessage(
   return data;
 }
 
+
+export interface SandboxRefactorResponse {
+  advisory: string;
+  before_code: string;
+  after_code: string;
+  model: string;
+}
+
+export async function getSandboxRefactor(
+  repoUrl: string,
+  filepath: string,
+  antiPattern: string
+): Promise<SandboxRefactorResponse> {
+  const { data } = await axios.post<SandboxRefactorResponse>(
+    `${API_BASE}/sandbox/refactor`,
+    { repo_url: repoUrl, filepath, anti_pattern: antiPattern },
+    { timeout: 30000 }
+  );
+  return data;
+}
+
+export interface CicdCheckResponse {
+  passed: boolean;
+  risk_score: number;
+  base_risk: number;
+  report: string;
+  model: string;
+}
+
+export async function getCicdCheck(
+  repoUrl: string,
+  filepath: string,
+  insertions: number,
+  deletions: number
+): Promise<CicdCheckResponse> {
+  const { data } = await axios.post<CicdCheckResponse>(
+    `${API_BASE}/cicd/check`,
+    { repo_url: repoUrl, filepath, insertions, deletions },
+    { timeout: 30000 }
+  );
+  return data;
+}
+
+export interface ForecastResponse {
+  projected_score: number;
+  report: string;
+  model: string;
+}
+
+export async function getForecastSimulate(
+  repoUrl: string,
+  refactorHotspots: boolean,
+  addTests: boolean,
+  onboardDevs: number,
+  churnVelocity: number,
+  baseHealth: number
+): Promise<ForecastResponse> {
+  const { data } = await axios.post<ForecastResponse>(
+    `${API_BASE}/forecast/simulate`,
+    {
+      repo_url: repoUrl,
+      refactor_hotspots: refactorHotspots,
+      add_tests: addTests,
+      onboard_devs: onboardDevs,
+      churn_velocity: churnVelocity,
+      base_health: baseHealth
+    },
+    { timeout: 30000 }
+  );
+  return data;
+}
+

@@ -91,29 +91,39 @@ def call_llm(messages: list, context_items: list = None) -> tuple[str, str]:
 
     # 2. Attempt Groq Fallback
     if GROQ_API_KEY:
-        try:
-            logger.info("Attempting AI completion via Groq (%s)...", GROQ_MODEL)
-            response = requests.post(
-                GROQ_URL,
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 800,
-                },
-                timeout=TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            reply = payload["choices"][0]["message"]["content"].strip()
-            logger.info("Groq AI call successful.")
-            return reply, "Groq-Llama-3.3"
-        except Exception as exc:
-            logger.warning("Groq API call failed or timed out: %s. Falling back to offline mode.", exc)
+        models_to_try = [GROQ_MODEL, "llama-3.1-8b-instant", "groq/compound-mini", "groq/compound"]
+        import time
+        for model in models_to_try:
+            for attempt in range(3):
+                try:
+                    logger.info("Attempting AI completion via Groq (%s) [attempt %d/3]...", model, attempt + 1)
+                    response = requests.post(
+                        GROQ_URL,
+                        headers={
+                            "Authorization": f"Bearer {GROQ_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "temperature": 0.3,
+                            "max_tokens": 800,
+                        },
+                        timeout=TIMEOUT_SECONDS,
+                    )
+                    if response.status_code == 429:
+                        wait_sec = (attempt + 1) * 1.5
+                        logger.warning("Groq model %s returned 429. Waiting %.1fs to retry...", model, wait_sec)
+                        time.sleep(wait_sec)
+                        continue
+                    response.raise_for_status()
+                    payload = response.json()
+                    reply = payload["choices"][0]["message"]["content"].strip()
+                    logger.info("Groq AI call successful with model %s.", model)
+                    return reply, f"Groq-{model}"
+                except Exception as exc:
+                    logger.warning("Groq API call failed for model %s: %s.", model, exc)
+                    break
     else:
         logger.info("Groq API Key is not set. Skipping to Local Fallback.")
 
